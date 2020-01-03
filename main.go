@@ -325,7 +325,7 @@ func cmdList(c *cli.Context) error {
 		return err
 	}
 	defer f.Close()
-	files, err := f.Readdirnames(-1)
+	files, err := listFiles(cfg.MemoDir)
 	if err != nil {
 		return err
 	}
@@ -381,7 +381,7 @@ func cmdList(c *cli.Context) error {
 }
 
 func escape(name string) string {
-	s := regexp.MustCompile(`[ <>:"/\\|?*%#]`).ReplaceAllString(name, "-")
+	s := regexp.MustCompile(`[ <>:"\\|?*%#]`).ReplaceAllString(name, "-")
 	s = regexp.MustCompile(`--+`).ReplaceAllString(s, "-")
 	return strings.Trim(strings.Replace(s, "--", "-", -1), "- ")
 }
@@ -541,12 +541,7 @@ func filterTmpl(tmpl string) string {
 
 func (cfg *config) filterFiles() ([]string, error) {
 	var files []string
-	f, err := os.Open(cfg.MemoDir)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	files, err = f.Readdirnames(-1)
+	files, err := listFiles(cfg.MemoDir)
 	if err != nil {
 		return nil, err
 	}
@@ -644,12 +639,7 @@ func cmdDelete(c *cli.Context) error {
 	if !c.Args().Present() {
 		return errors.New("pattern required")
 	}
-	f, err := os.Open(cfg.MemoDir)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	files, err := f.Readdirnames(-1)
+	files, err := listFiles(cfg.MemoDir)
 	if err != nil {
 		return err
 	}
@@ -696,12 +686,7 @@ func cmdGrep(c *cli.Context) error {
 	if !c.Args().Present() {
 		return errors.New("pattern required")
 	}
-	f, err := os.Open(cfg.MemoDir)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	files, err := f.Readdirnames(-1)
+	files, err := listFiles(cfg.MemoDir)
 	if err != nil || len(files) == 0 {
 		return err
 	}
@@ -753,13 +738,7 @@ func cmdServe(c *cli.Context) error {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == "/" {
-			f, err := os.Open(cfg.MemoDir)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			defer f.Close()
-			files, err := f.Readdirnames(-1)
+			files, err := listFiles(cfg.MemoDir)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -875,6 +854,42 @@ func listPlugins(fn func(string)) error {
 		}
 	}
 	return nil
+}
+
+func listFiles(dir string) ([]string, error) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	files, err := f.Readdir(-1)
+	if err != nil {
+		return nil, err
+	}
+
+	var newfiles []string
+	for _, file := range files {
+		if file.IsDir() {
+			f, err := os.Open(filepath.Join(dir, file.Name()))
+			if err != nil {
+				return nil, err
+			}
+			defer f.Close()
+
+			subfiles, err := f.Readdirnames(-1)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, subfile := range subfiles {
+				newfiles = append(newfiles, filepath.Join(file.Name(), subfile))
+			}
+			continue
+		}
+		newfiles = append(newfiles, file.Name())
+	}
+	return newfiles, nil
 }
 
 func appRun(c *cli.Context) error {
